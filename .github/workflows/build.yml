@@ -1,0 +1,212 @@
+name: Build Blender (Linux ARM64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      blender_version:
+        description: 'Blender version tag'
+        required: true
+        default: 'v5.0.1'
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+      rebuild_deps:
+        description: 'Force rebuild dependencies'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: rockylinux:8
+      options: --privileged --user root
+
+    steps:
+      - name: Install base dependencies
+        run: |
+          dnf makecache
+          dnf install -y epel-release
+          dnf install -y git git-lfs gcc-toolset-14 ccache
+
+          # Fix sudo PAM issue: create a sudo wrapper that bypasses password and PAM authentication
+          # Since the container has the root user already, simply let sudo execute commands directly
+          mv /usr/bin/sudo /usr/bin/sudo.orig || true
+          cat > /usr/bin/sudo << 'EOF'
+          #!/bin/bash
+          # Skip sudo for root user, just execute the command directly
+          if [ "$1" = "-y" ] || [ "$1" = "-n" ] || [ "$1" = "-E" ]; then
+            shift
+          fi
+          exec "$@"
+          EOF
+          chmod +x /usr/bin/sudo
+
+      - name: Setup Git LFS
+        run: git-lfs install
+
+      - name: Clone Blender repository
+        run: |
+          mkdir -p ~/blender-git
+          cd ~/blender-git
+          GIT_LFS_SKIP_SMUDGE=1 git clone -b ${{ github.event.inputs.blender_version }} --depth 1 https://github.com/blender/blender.git
+
+      - name: Clone patches repository
+        run: |
+          cd ~/blender-git
+          git clone -b ci --depth 1 https://github.com/lfdevs/blender-linux-arm64.git patches-repo
+
+      - name: Apply patches
+        run: |
+          cd ~/blender-git/blender
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          PATCH_DIR=~/blender-git/patches-repo/patches/${{ github.event.inputs.blender_version }}
+          if [ -d "$PATCH_DIR" ]; then
+            echo "Found patches directory: $PATCH_DIR"
+            for patch in $(ls -1 "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
+              echo "Applying patch: $patch"
+              git apply --verbose "$patch"
+            done
+            git add -A
+            git commit -m "Apply patches for ${{ github.event.inputs.blender_version }}" || echo "No changes to commit"
+            echo "All patches applied successfully"
+          else
+            echo "No patches directory found for ${{ github.event.inputs.blender_version }}, skipping..."
+          fi
+
+      - name: Install build dependencies
+        run: |
+          chmod +x ~/blender-git/blender/build_files/build_environment/linux/linux_rocky8_setup.sh
+          ~/blender-git/blender/build_files/build_environment/linux/linux_rocky8_setup.sh
+          echo "Cleaning dnf cache..."
+          dnf clean all
+
+      - name: Cache Blender dependencies
+        uses: actions/cache@v4
+        id: cache-deps
+        with:
+          path: ~/blender-git/blender/lib/linux_arm64
+          key: blender-deps-${{ github.event.inputs.blender_version }}-${{ runner.os }}-${{ runner.arch }}-v1
+          restore-keys: |
+            blender-deps-${{ github.event.inputs.blender_version }}-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: /root/.ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-v1
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Configure ccache
+        run: |
+          export CCACHE_DIR=/root/.ccache
+          ccache --max-size=5G
+          ccache --show-config
+          ccache --zero-stats
+          ccache --show-stats
+
+      - name: Build dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true' || github.event.inputs.rebuild_deps == true
+        shell: bash
+        run: |
+          source /opt/rh/gcc-toolset-14/enable
+          export CCACHE_DIR=/root/.ccache
+          cd ~/blender-git/blender
+          
+          # Fix CUDA build error for OIDN
+          export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+          export PATH=/usr/local/cuda/bin${PATH:+:${PATH}}
+          
+          # Fix FLAC extract error
+          export LANG=en_US.UTF-8
+          
+          export CC=/opt/rh/gcc-toolset-14/root/usr/bin/gcc
+          export CXX=/opt/rh/gcc-toolset-14/root/usr/bin/g++
+          make deps
+          unset CC CXX
+
+      - name: Save Blender dependencies cache
+        if: steps.cache-deps.outputs.cache-hit != 'true' || github.event.inputs.rebuild_deps == true
+        uses: actions/cache/save@v4
+        with:
+          path: ~/blender-git/blender/lib/linux_arm64
+          key: blender-deps-${{ github.event.inputs.blender_version }}-${{ runner.os }}-${{ runner.arch }}-v1
+
+      - name: Clean dependencies build artifacts
+        if: steps.cache-deps.outputs.cache-hit != 'true' || github.event.inputs.rebuild_deps == true
+        run: |
+          echo "Cleaning dependencies build directory to save space..."
+          rm -rf ~/blender-git/build_linux
+          echo "Dependencies build directory cleaned"
+
+      - name: Verify dependencies
+        run: |
+          echo "Checking dependencies directory..."
+          ls -lah ~/blender-git/blender/lib/linux_arm64/ || echo "Dependencies not found!"
+
+      - name: Build Blender
+        shell: bash
+        run: |
+          source /opt/rh/gcc-toolset-14/enable
+          export CCACHE_DIR=/root/.ccache
+          
+          mkdir -p ~/blender-git/build_linux_${{ github.event.inputs.build_type }}
+          cd ~/blender-git/build_linux_${{ github.event.inputs.build_type }}
+          
+          if [ "${{ github.event.inputs.build_type }}" == "release" ]; then
+            cmake -C ../blender/build_files/cmake/config/blender_release.cmake \
+                  -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DWITH_LIBS_PRECOMPILED=ON \
+                  -DLIBDIR=$HOME/blender-git/blender/lib/linux_arm64 \
+                  -DWITH_INSTALL_PORTABLE=ON \
+                  -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                  -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+                  ../blender
+          else
+            cmake -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Debug \
+                  -DWITH_LIBS_PRECOMPILED=ON \
+                  -DLIBDIR=$HOME/blender-git/blender/lib/linux_arm64 \
+                  -DWITH_INSTALL_PORTABLE=ON \
+                  -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                  -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+                  ../blender
+          fi
+
+          echo "Building Blender..."
+          ninja
+          
+          echo "Build completed successfully!"
+          echo "ccache statistics:"
+          ccache --show-stats
+
+      - name: Save ccache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: /root/.ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-v1
+
+      - name: Package Blender
+        shell: bash
+        run: |
+          source /opt/rh/gcc-toolset-14/enable
+          cd ~/blender-git/build_linux_${{ github.event.inputs.build_type }}
+          cpack
+          echo "Packaging completed successfully!"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-linux-arm64-${{ github.event.inputs.blender_version }}-${{ github.event.inputs.build_type }}
+          path: ~/blender-git/build_linux_${{ github.event.inputs.build_type }}/*.tar.gz
+          retention-days: 90
