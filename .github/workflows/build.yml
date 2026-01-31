@@ -101,7 +101,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /root/.ccache
-          key: ccache-${{ runner.os }}-${{ runner.arch }}-v1
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ runner.arch }}-
 
@@ -194,7 +194,7 @@ jobs:
         if: always()
         with:
           path: /root/.ccache
-          key: ccache-${{ runner.os }}-${{ runner.arch }}-v1
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Package Blender
         shell: bash
