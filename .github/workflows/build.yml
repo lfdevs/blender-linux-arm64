@@ -108,7 +108,7 @@ jobs:
       - name: Configure ccache
         run: |
           export CCACHE_DIR=/root/.ccache
-          ccache --max-size=5G
+          ccache --max-size=2G
           ccache --show-config
           ccache --zero-stats
           ccache --show-stats
@@ -168,6 +168,13 @@ jobs:
                   -DWITH_LIBS_PRECOMPILED=ON \
                   -DLIBDIR=$HOME/blender-git/blender/lib/linux_arm64 \
                   -DWITH_INSTALL_PORTABLE=ON \
+                  -DCPACK_BINARY_TGZ=ON \
+                  -DCPACK_BINARY_STGZ=OFF \
+                  -DCPACK_BINARY_TZ=OFF \
+                  -DCPACK_SOURCE_TBZ2=OFF \
+                  -DCPACK_SOURCE_TGZ=OFF \
+                  -DCPACK_SOURCE_TXZ=OFF \
+                  -DCPACK_SOURCE_TZ=OFF \
                   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
                   -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
                   ../blender
@@ -177,6 +184,13 @@ jobs:
                   -DWITH_LIBS_PRECOMPILED=ON \
                   -DLIBDIR=$HOME/blender-git/blender/lib/linux_arm64 \
                   -DWITH_INSTALL_PORTABLE=ON \
+                  -DCPACK_BINARY_TGZ=ON \
+                  -DCPACK_BINARY_STGZ=OFF \
+                  -DCPACK_BINARY_TZ=OFF \
+                  -DCPACK_SOURCE_TBZ2=OFF \
+                  -DCPACK_SOURCE_TGZ=OFF \
+                  -DCPACK_SOURCE_TXZ=OFF \
+                  -DCPACK_SOURCE_TZ=OFF \
                   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
                   -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
                   ../blender
@@ -200,7 +214,10 @@ jobs:
         shell: bash
         run: |
           source /opt/rh/gcc-toolset-14/enable
+          export CCACHE_DIR=/root/.ccache
+          ccache -C
           cd ~/blender-git/build_linux_${{ github.event.inputs.build_type }}
+          echo "Packaging Blender..."
           cpack
           echo "Packaging completed successfully!"
 
