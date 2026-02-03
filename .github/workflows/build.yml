@@ -14,6 +14,7 @@ on:
         type: choice
         options:
           - release
+          - lite
           - debug
       rebuild_deps:
         description: 'Force rebuild dependencies'
@@ -178,6 +179,23 @@ jobs:
                   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
                   -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
                   ../blender
+          elif [ "${{ github.event.inputs.build_type }}" == "lite" ]; then
+            cmake -C ../blender/build_files/cmake/config/blender_lite.cmake \
+                  -G Ninja \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DWITH_LIBS_PRECOMPILED=ON \
+                  -DLIBDIR=$HOME/blender-git/blender/lib/linux_arm64 \
+                  -DWITH_INSTALL_PORTABLE=ON \
+                  -DCPACK_BINARY_TGZ=ON \
+                  -DCPACK_BINARY_STGZ=OFF \
+                  -DCPACK_BINARY_TZ=OFF \
+                  -DCPACK_SOURCE_TBZ2=OFF \
+                  -DCPACK_SOURCE_TGZ=OFF \
+                  -DCPACK_SOURCE_TXZ=OFF \
+                  -DCPACK_SOURCE_TZ=OFF \
+                  -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                  -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+                  ../blender
           else
             cmake -G Ninja \
                   -DCMAKE_BUILD_TYPE=Debug \
@@ -219,11 +237,15 @@ jobs:
           cd ~/blender-git/build_linux_${{ github.event.inputs.build_type }}
           echo "Packaging Blender..."
           cpack
+          echo "Calculating sha256 checksums..."
+          find . -maxdepth 1 \( -name "*.tar.gz" \) -type f -printf "%P\0" | xargs -0 sha256sum | sort -k2 > sha256sums.txt
           echo "Packaging completed successfully!"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: blender-linux-arm64-${{ github.event.inputs.blender_version }}-${{ github.event.inputs.build_type }}
-          path: ~/blender-git/build_linux_${{ github.event.inputs.build_type }}/*.tar.gz
+          path: |
+            ~/blender-git/build_linux_${{ github.event.inputs.build_type }}/*.tar.gz
+            ~/blender-git/build_linux_${{ github.event.inputs.build_type }}/sha256sums.txt
           retention-days: 90
