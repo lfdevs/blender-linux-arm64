@@ -1,0 +1,48 @@
+From d8e08527422a160de05d03e37cfc3661ca327e5c Mon Sep 17 00:00:00 2001
+From: lfdevs <109842948+lfdevs@users.noreply.github.com>
+Date: Fri, 30 Jan 2026 00:25:32 +0800
+Subject: [PATCH 2/2] Deps: Linux arm64: Exclude ROCm installation with an
+ architecture check
+
+Skip ROCm setup on aarch64, as ROCm is not supported on ARM64 now.
+---
+ .../linux/linux_rocky8_setup.sh               | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/build_files/build_environment/linux/linux_rocky8_setup.sh b/build_files/build_environment/linux/linux_rocky8_setup.sh
+index 54c8cfe8407..1759cfe835c 100644
+--- a/build_files/build_environment/linux/linux_rocky8_setup.sh
++++ b/build_files/build_environment/linux/linux_rocky8_setup.sh
+@@ -200,11 +200,13 @@ yum -y install jack-audio-connection-kit-devel
+ # - "Register kernel-mode driver".
+ # - "Install kernel driver".
+ 
+-# Register ROCm packages
+-sudo rpm --import https://repo.radeon.com/rocm/rocm.gpg.key
+-rm -f /etc/yum.repos.d/amdgpu-6.3.1.repo
+-rm -f /etc/yum.repos.d/rocm-6.3.1.repo
+-tee --append /etc/yum.repos.d/amdgpu-6.3.1.repo <<EOF
++# Skip ROCm setup on aarch64, as ROCm is not supported on ARM64 now.
++if [ "$(uname -i)" != "aarch64" ]; then
++    # Register ROCm packages
++    sudo rpm --import https://repo.radeon.com/rocm/rocm.gpg.key
++    rm -f /etc/yum.repos.d/amdgpu-6.3.1.repo
++    rm -f /etc/yum.repos.d/rocm-6.3.1.repo
++    tee --append /etc/yum.repos.d/amdgpu-6.3.1.repo <<EOF
+ [amdgpu-6.3.1]
+ name=amdgpu-6.3.1
+ baseurl=https://repo.radeon.com/amdgpu/6.3.1/el/8.10/main/x86_64/
+@@ -222,6 +224,7 @@ gpgcheck=1
+ exclude=rock-dkms
+ gpgkey=https://repo.radeon.com/rocm/rocm.gpg.key
+ EOF
+-yum -y update
+-sudo yum install -y hipcc6.3.1 hip-devel6.3.1 rocm-llvm6.3.1 rocm-core6.3.1 rocm-device-libs6.3.1
+-sudo update-alternatives --set rocm /opt/rocm-6.3.1
++    yum -y update
++    sudo yum install -y hipcc6.3.1 hip-devel6.3.1 rocm-llvm6.3.1 rocm-core6.3.1 rocm-device-libs6.3.1
++    sudo update-alternatives --set rocm /opt/rocm-6.3.1
++fi
+-- 
+2.47.3
+
