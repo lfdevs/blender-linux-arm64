@@ -16,6 +16,14 @@ on:
           - release
           - lite
           - debug
+      gcc_version:
+        description: 'GCC version'
+        required: true
+        default: '14'
+        type: choice
+        options:
+          - 14
+          - 11
       rebuild_deps:
         description: 'Force rebuild dependencies'
         required: false
@@ -34,7 +42,7 @@ jobs:
         run: |
           dnf makecache
           dnf install -y epel-release
-          dnf install -y git git-lfs gcc-toolset-14 ccache
+          dnf install -y git git-lfs gcc-toolset-${{ github.event.inputs.gcc_version }} ccache
 
           # Fix sudo PAM issue: create a sudo wrapper that bypasses password and PAM authentication
           # Since the container has the root user already, simply let sudo execute commands directly
@@ -118,7 +126,7 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true' || github.event.inputs.rebuild_deps == true
         shell: bash
         run: |
-          source /opt/rh/gcc-toolset-14/enable
+          source /opt/rh/gcc-toolset-${{ github.event.inputs.gcc_version }}/enable
           export CCACHE_DIR=/root/.ccache
           cd ~/blender-git/blender
           
@@ -129,8 +137,8 @@ jobs:
           # Fix FLAC extract error
           export LANG=en_US.UTF-8
           
-          export CC=/opt/rh/gcc-toolset-14/root/usr/bin/gcc
-          export CXX=/opt/rh/gcc-toolset-14/root/usr/bin/g++
+          export CC=/opt/rh/gcc-toolset-${{ github.event.inputs.gcc_version }}/root/usr/bin/gcc
+          export CXX=/opt/rh/gcc-toolset-${{ github.event.inputs.gcc_version }}/root/usr/bin/g++
           make deps
           unset CC CXX
 
@@ -156,7 +164,7 @@ jobs:
       - name: Build Blender
         shell: bash
         run: |
-          source /opt/rh/gcc-toolset-14/enable
+          source /opt/rh/gcc-toolset-${{ github.event.inputs.gcc_version }}/enable
           export CCACHE_DIR=/root/.ccache
           
           mkdir -p ~/blender-git/build_linux_${{ github.event.inputs.build_type }}
@@ -231,7 +239,7 @@ jobs:
       - name: Package Blender
         shell: bash
         run: |
-          source /opt/rh/gcc-toolset-14/enable
+          source /opt/rh/gcc-toolset-${{ github.event.inputs.gcc_version }}/enable
           export CCACHE_DIR=/root/.ccache
           ccache -C
           cd ~/blender-git/build_linux_${{ github.event.inputs.build_type }}
